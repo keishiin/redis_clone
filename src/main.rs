@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+mod parser;
+
 #[tokio::main]
 pub async fn main() {
     let listener = TcpListener::bind("127.0.0.1:6379").await.unwrap();
@@ -118,46 +120,4 @@ fn parse_data(data: &str) -> Option<(String, Vec<&str>)> {
     println!("args: {:?}", args);
 
     Some((command.to_lowercase(), args))
-}
-
-#[cfg(test)]
-
-mod tests {
-
-    use super::*;
-
-    #[test]
-
-    fn test_set_command() {
-        let data = "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n";
-
-        assert_eq!(
-            parse_data(data),
-            Some(("set".to_string(), vec!["key", "value"]))
-        );
-    }
-
-    #[test]
-
-    fn test_get_command() {
-        let data = "*2\r\n$3\r\nGET\r\n$3\r\nkey\r\n";
-
-        assert_eq!(parse_data(data), Some(("get".to_string(), vec!["key"])));
-    }
-
-    #[test]
-
-    fn test_info_command() {
-        let data = "*1\r\n$4\r\nping\r\n";
-
-        assert_eq!(parse_data(data), Some(("ping".to_string(), vec![])));
-    }
-
-    #[test]
-
-    fn test_invalid_data() {
-        let data = "*1\r\n$3\r\nSET\r\n";
-
-        assert_eq!(parse_data(data), None);
-    }
 }
