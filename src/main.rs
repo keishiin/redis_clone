@@ -26,7 +26,6 @@ pub async fn main() {
 
 async fn handle_connection(
     stream: &mut TcpStream,
-
     store: &mut Arc<Mutex<HashMap<String, String>>>,
 ) {
     let mut buf = [0; 1024];
@@ -74,7 +73,6 @@ async fn handle_connection(
                         .get(args.first().unwrap().to_string().as_str())
                     {
                         None => "$-1\r\n".to_string(),
-
                         Some(v) => {
                             format!("${}\r\n{}\r\n", v.len(), v)
                         }
