@@ -18,8 +18,6 @@ fn filter_data(buffer: &[u8]) -> Option<Vec<&str>> {
         .filter(|&x| x.chars().all(|c| c.is_alphabetic()))
         .collect();
 
-    println!("{:?}", filtered);
-
     if filtered.is_empty() {
         None
     } else {

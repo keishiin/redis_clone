@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::parser::parse_data_new;
+
 mod parser;
 
 #[tokio::main]
@@ -39,14 +41,10 @@ async fn handle_connection(
             break;
         }
 
-        let data = std::str::from_utf8(&buf[..bytes_read]).expect("error getting data from buffer");
-
-        println!("data: {:?}", data);
-
-        if let Some((command, args)) = parse_data(data) {
-            println!("command: {}", command);
-
-            println!("args: {:?}", args);
+        if let Some(mut data) = parse_data_new(&buf) {
+            let command = data[0];
+            data.retain(|&x| x != command);
+            let args = &data;
 
             let response = match command.to_lowercase().as_str() {
                 "ping" => "+PONG\r\n".to_string(),
@@ -92,30 +90,144 @@ async fn handle_connection(
     }
 }
 
-fn parse_data(data: &str) -> Option<(String, Vec<&str>)> {
-    println!("data: {}", data);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
-    let parts: Vec<&str> = data.trim_end_matches("\r\n").split("\r\n").collect();
+    #[tokio::test]
+    async fn test_handle_connection_ping() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
 
-    if parts.is_empty() {
-        return None;
+        let store = Arc::new(Mutex::new(HashMap::new()));
+        let store_clone = store.clone();
+
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut store_clone = store_clone.clone();
+                tokio::spawn(async move {
+                    handle_connection(&mut socket, &mut store_clone).await;
+                });
+            }
+        });
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+
+        stream.write_all(b"+1\r\n$4\r\nping\r\n").await.unwrap();
+
+        let mut buf = [0; 1024];
+        let bytes_read = stream.read(&mut buf).await.unwrap();
+        let response = std::str::from_utf8(&buf[..bytes_read]).unwrap();
+
+        assert_eq!(response, "+PONG\r\n");
     }
 
-    println!("parts: {:?}", parts);
+    #[tokio::test]
+    async fn test_handle_connection_echo() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
 
-    let command = parts[2];
+        let store = Arc::new(Mutex::new(HashMap::new()));
+        let store_clone = store.clone();
 
-    let mut args: Vec<&str> = parts.iter().skip(2).step_by(2).copied().collect();
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut store_clone = store_clone.clone();
+                tokio::spawn(async move {
+                    handle_connection(&mut socket, &mut store_clone).await;
+                });
+            }
+        });
 
-    if command != "ping" && parts.len() == 3 {
-        return None;
-    };
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        stream
+            .write_all(b"*2\r\n$4\r\nECHO\r\n$5\r\nhello\r\n")
+            .await
+            .unwrap();
 
-    args.retain_mut(|&mut s| s != command);
+        let mut buf = [0; 1024];
+        let bytes_read = stream.read(&mut buf).await.unwrap();
+        let response = std::str::from_utf8(&buf[..bytes_read]).unwrap();
 
-    println!("command: {}", command);
+        assert_eq!(response, "$5\r\nhello\r\n");
+    }
 
-    println!("args: {:?}", args);
+    #[tokio::test]
+    async fn test_handle_connection_get() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
 
-    Some((command.to_lowercase(), args))
+        let store = Arc::new(Mutex::new(HashMap::new()));
+        let store_clone = store.clone();
+        store_clone
+            .lock()
+            .unwrap()
+            .insert("mykey".to_string(), "hello".to_string());
+
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut store_clone = store_clone.clone();
+                tokio::spawn(async move {
+                    handle_connection(&mut socket, &mut store_clone).await;
+                });
+            }
+        });
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        stream
+            .write_all(b"$6\r\nGET\r\n$5\r\nmykey\r\n")
+            .await
+            .unwrap();
+
+        let mut buf = [0; 1024];
+        let bytes_read = stream.read(&mut buf).await.unwrap();
+        let response = std::str::from_utf8(&buf[..bytes_read]).unwrap();
+
+        assert_eq!(response, "$5\r\nhello\r\n");
+    }
+
+    #[tokio::test]
+    async fn test_handle_connection_set() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let store = Arc::new(Mutex::new(HashMap::new()));
+        let store_clone = store.clone();
+        store_clone
+            .lock()
+            .unwrap()
+            .insert("mykey".to_string(), "hello".to_string());
+
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut store_clone = store_clone.clone();
+                tokio::spawn(async move {
+                    handle_connection(&mut socket, &mut store_clone).await;
+                });
+            }
+        });
+
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        stream
+            .write_all(b"*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n")
+            .await
+            .unwrap();
+
+        let mut buf = [0; 1024];
+        let bytes_read = stream.read(&mut buf).await.unwrap();
+        let response = std::str::from_utf8(&buf[..bytes_read]).unwrap();
+
+        let store_lock = store.lock().unwrap();
+
+        assert_eq!(response, "+OK\r\n");
+        assert_eq!(store_lock.get("key"), Some(&"value".to_string()));
+    }
 }
