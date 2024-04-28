@@ -31,7 +31,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_array_parse() {
+    fn test_set_parse() {
         let test_data = "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n";
         let temp = parse_data_new(test_data.as_bytes());
         let v = vec!["SET", "key", "value"];
@@ -39,7 +39,7 @@ mod tests {
     }
 
     #[test]
-    fn test_array_parse_multiple_key_values() {
+    fn test_set_parse_multiple_key_values() {
         let test_data = "*3\r\n$3\r\nSET\r\n$3\r\nkey\r\n$5\r\nvalue\r\n$3\r\nkey\r\n$5\r\nvalue\r\n$3\r\nkey\r\n$5\r\nvalue\r\n";
         let temp = parse_data_new(test_data.as_bytes());
         let v = vec!["SET", "key", "value", "key", "value", "key", "value"];
@@ -47,7 +47,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simple_string_parse() {
+    fn test_ping_string_parse() {
         let test_data = "+1\r\n$4\r\nping\r\n";
         let temp = parse_data_new(test_data.as_bytes());
         let v = vec!["ping"];
@@ -55,7 +55,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bulk_string_parse() {
+    fn test_get_value() {
         let test_data = "$6\r\nGET\r\n$5\r\nmykey\r\n";
         let temp = parse_data_new(test_data.as_bytes());
         let v = vec!["GET", "mykey"];
