@@ -1,4 +1,6 @@
+use serialzer::Value;
 use std::collections::HashMap;
+use std::env::args;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -6,6 +8,7 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::parser::parse_data_new;
 
 mod parser;
+mod serialzer;
 
 #[tokio::main]
 pub async fn main() {
@@ -47,13 +50,9 @@ async fn handle_connection(
             let args = &data;
 
             let response = match command.to_lowercase().as_str() {
-                "ping" => "+PONG\r\n".to_string(),
+                "ping" => Value::Simple("PONG".to_string()),
 
-                "echo" => format!(
-                    "${}\r\n{}\r\n",
-                    args.first().unwrap().len(),
-                    args.first().unwrap()
-                ),
+                "echo" => Value::Bulk(args.first().unwrap().to_string().clone()),
 
                 "set" => {
                     store.lock().unwrap().insert(
@@ -61,7 +60,7 @@ async fn handle_connection(
                         args[1].to_string().clone(),
                     );
 
-                    "+OK\r\n".to_string()
+                    Value::Simple("OK".to_string())
                 }
 
                 "get" => {
@@ -70,17 +69,18 @@ async fn handle_connection(
                         .unwrap()
                         .get(args.first().unwrap().to_string().as_str())
                     {
-                        None => "$-1\r\n".to_string(),
-                        Some(v) => {
-                            format!("${}\r\n{}\r\n", v.len(), v)
-                        }
+                        None => Value::Error("No value found".to_string()),
+                        Some(v) => Value::Bulk(v.to_string()),
                     }
                 }
 
-                _ => "-Error unknown command\r\n".to_string(),
+                _ => Value::Error("Unknown command".to_string()),
             };
 
-            stream.write_all(response.as_bytes()).await.unwrap();
+            stream
+                .write_all(response.serialize().as_bytes())
+                .await
+                .unwrap();
         } else {
             stream
                 .write_all(b"-invalid format for redis protocol\r\n")
